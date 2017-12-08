@@ -23,6 +23,17 @@ class Universe(object):
         self.invBasis=np.linalg.inv(basis) #useful for 4-way symmetric lattices.
         #a color for each piece index, to match a real-life puzzle piece color
         self.colors=(
+            'xkcd:pink',
+            'xkcd:darkblue',
+            'lime',
+            'xkcd:crimson',
+            'xkcd:yellow',
+            'silver',
+            'xkcd:red',
+            'xkcd:lightblue',
+            'xkcd:darkgreen',
+            'xkcd:purple',
+            'xkcd:orange',
             'xkcd:beige',
         )
 
@@ -126,7 +137,7 @@ class ShapeSet(list):
             if individually or i == 0:            
                 ax=self._prepareAxis(Xb, Yb, Zb)
             color=u.colors[p.idx]
-            size=2000
+            size=500
 #             elif p.idx==-1:#the board
 #                 color='green'
 #                 size=30
@@ -134,12 +145,12 @@ class ShapeSet(list):
 #                 color='black'
 #                 size=5
             inOrthogonal=p.ar.dot(u.basis.T)
-            ax.scatter(*np.hsplit(inOrthogonal,3), c=mpl.colors.to_rgba(color,.7), marker='o', s=size)
+            ax.scatter(*np.hsplit(inOrthogonal,3), c=np.array([mpl.colors.to_rgba(color,.7)]), marker='o', s=size, depthshade=False)
             plt.show()
 
     def _prepareAxis(self, Xb, Yb, Zb):
         fig = plt.figure()
-        fig.set_size_inches(5,5)
+        fig.set_size_inches(7,7)
         # Comment or uncomment following both lines to test the fake bounding box:
         ax = fig.add_subplot(111, projection='3d')
         for xb, yb, zb in zip(Xb, Yb, Zb):
@@ -299,7 +310,7 @@ def getPieces():
         pieces[i]=Shape(withZaxis, i)
     return pieces
 
-def getBoard():
+def pyramidBoard():
     #our board is a pyramid with a 5x5 base, but in our basis, 
     #one ridge of the pyramid is along the z-axis
     side=5
@@ -313,9 +324,33 @@ def getBoard():
     board=Shape(board,-1)
     return board
 
-def main():
+def rectangleBoard():
+    board=np.ones((11,5,1))
+    board=np.transpose(np.array(np.nonzero(board))).astype(np.int8)    
+    return Shape(board,-1)
+
+def rectangleProblem():
     pieces=getPieces()
-    board=getBoard()
+    board=rectangleBoard()
+    basis=np.eye(3)
+    #many Shape and ShapeSet methods (those making use of a Shape's state representation) require the universe u global variable defined
+    global u
+    u=Universe(board,basis,len(pieces))
+
+    #the Z axis with 4-fold symmetry
+    #and the and the Y axis with 2-fold symmetry (flips of the pieces)
+    #each row is a rotation axis
+    rots=rotations(np.array(
+        [[0,0,1],
+         [0,1,0]
+        ]), 
+        np.array([4,2]).T)
+
+    return rots, pieces
+
+def pyramidProblem():
+    pieces=getPieces()
+    board=pyramidBoard()
 
     basis=np.array([[1,0,0.5],
                     [0,1,0.5],
@@ -324,8 +359,9 @@ def main():
     #many Shape and ShapeSet methods (those making use of a Shape's state representation) require the universe u global variable defined
     global u
     u=Universe(board,basis,len(pieces))
-    
+
     #diagonals in the X-Y plane, are the rotation axes, with 4-fold symmetry each
+    #and the and the Y axis with 2-fold symmetry
     #each row is a rotation axis
     rots=rotations(np.array(
         [[1,1,0],
@@ -333,20 +369,27 @@ def main():
          [0,1,0]
         ]), 
         np.array([4,4,2]).T)
-    
+
+    return rots, pieces
+
+def solve(rots, pieces):    
     stateSet=ShapeSet()
     for p in pieces:
         for o in p.orientations(rots):
             ts=o.containedTranslations(u.board)
             stateSet.extend(ts)
-    
-#     #sanity check that all are unique
-#     print len(stateSet)
-#     uss =  np.unique(np.array([us.ar for us in stateSet]),axis=0)
-#     print uss.shape[0]
 
-    print exact_cover_np.get_exact_cover(np.array([[1,0,0],[0,1,1]], dtype='int32'))
     S = stateSet.asStateMatrix().astype(np.int32)
-    print exact_cover_np.get_exact_cover(S)
+    print "number of oriented, positioned shapes (cover candidates): %d"%len(S) 
+    solState = exact_cover_np.get_exact_cover(S)
+    solSet=ShapeSet()
+    for i in solState:
+        solSet.append(stateSet[i])
+        
+    return solSet
+    
 if __name__ == '__main__':
-    main()
+#     p=pyramidProblem()
+    p=rectangleProblem()
+    s= solve(*p)
+    print s

@@ -1,10 +1,11 @@
 import matplotlib.pyplot as plt
 import numpy as np
+from dlmatrix import DLMatrix
 np.set_printoptions(formatter={'float_kind':lambda x: "%.3g" % x})
 from itertools import product, permutations
 import math
 import matplotlib as mpl
-import exact_cover_np
+from alg_x import AlgorithmX
 
 
 class Universe(object):
@@ -380,16 +381,29 @@ def solve(rots, pieces):
             stateSet.extend(ts)
 
     S = stateSet.asStateMatrix().astype(np.int32)
-    print "number of oriented, positioned shapes (cover candidates): %d"%len(S) 
-    solState = exact_cover_np.get_exact_cover(S)
-    solSet=ShapeSet()
-    for i in solState:
-        solSet.append(stateSet[i])
-        
-    return solSet
+    print("number of oriented, positioned shapes (cover candidates): %d"%len(S))
+    sols=[]
+    def solCollector(curSol):
+        sols.append(curSol.keys())
+        return len(sols)>=100
+
+    sparseS = DLMatrix(S.shape[1])
+    for r in S:
+        sparseS.add_sparse_row(np.nonzero(r)[0].tolist())
+
+    a=AlgorithmX(sparseS, solCollector, True) 
+    a()
+    print("number of solutions: %d"%len(sols))
+    solSets=[]
+    for s in sols:
+        solSet=ShapeSet()
+        for i in s:
+            solSet.append(stateSet[i])
+        solSets.append(solSet)
+    return solSets
     
 if __name__ == '__main__':
 #     p=pyramidProblem()
     p=rectangleProblem()
     s= solve(*p)
-    print s
+    print(s)

@@ -8,64 +8,35 @@ import matplotlib as mpl
 from alg_x import AlgorithmX
 
 
-class Universe(object):
-    ''' Defines the shape which is enough to retain geometric state of any shape.  
-        The universe shape is used to convert a shape to a binary state vector.
-        
-        Also defines the coordinate basis in which the shapes are specified, 
-        and color for underlying (unshifted, unrotated) pieces.'''
-    def __init__(self,board, basis, pieceCount):
-        self.board=board
-        self.boardGeomState=geomState(board.ar)
-        self.boardStateMap={s:i for i,s in enumerate(self.boardGeomState)}
-
-        self.stateDims=len(self.boardGeomState)+pieceCount
-        self.basis=basis #useful for 4-way symmetric lattices.
-        self.invBasis=np.linalg.inv(basis) #useful for 4-way symmetric lattices.
-        #a color for each piece index, to match a real-life puzzle piece color
-        self.colors=(
-            'xkcd:pink',
-            'xkcd:darkblue',
-            'lime',
-            'xkcd:crimson',
-            'xkcd:yellow',
-            'silver',
-            'xkcd:red',
-            'xkcd:lightblue',
-            'xkcd:darkgreen',
-            'xkcd:purple',
-            'xkcd:orange',
-            'xkcd:beige',
-        )
-
-def geomState(ar):
-    ''' @param ar: an array NxM coordinates in M-dimentional space
-        @return a set of strings, where the strings represents one of N coordinates in 3D space.
-    '''
-    s=set()
-    for c in ar:
-        s.add(c.tobytes())
-    return s
-
 class Shape(object):
     '''A covering set, a.k.a a puzzle piece rotated and translated to cover a specific region of the universe.
         The intention is for it to be immutable: don't modify any member variables.
     '''
     
     def __init__(self,ar,idx):
-        self.ar=ar
-        self.idx=idx
-        self.bbox=self._boundingBox()
+        self.ar:np.ndarray=ar
+        self.idx:int=idx
+        self._bbox=self._boundingBox()
+        self.geomState=self._computeGeomState()
         
     def __repr__(self):
         return 'Shape'+str((self.ar, self.idx))
     
-    def _boundingBox(self):
+    def _boundingBox(self)->np.ndarray:
         return np.array([
             np.min(self.ar,axis=0),
             np.max(self.ar,axis=0)
         ])
     
+    def _computeGeomState(self)->set[bytes]:
+        ''' @param ar: an array NxM coordinates in M-dimentional space
+            @return a set of strings, where the strings represent one of N coordinates in 3D space.
+        '''
+        s=set()
+        for c in self.ar:
+            s.add(c.tobytes())
+        return s
+
 #     def grow(self, by):
 #         '''return a piece like self, but grown by 'by' points in either direction along each of u.basis vectors in the lattice.
 #             FIXME not implemented for trangular or hexagonal lattices.
@@ -90,25 +61,27 @@ class Shape(object):
             if not np.allclose(p,pint):
                 raise Exception('%s is not close to integers after %dth rotation by\n%s\nThe result is %s'%(self,i,r,p))
             ors[i]=pint
-        ors = np.unique(ors,axis=0)
+        #sort the balls within each shape by the (x,y,z) key
+        sorted_indexes = np.lexsort((ors[:, :, 2], ors[:, :, 1], ors[:, :, 0]))
+        tiled_range=np.tile(np.arange(sorted_indexes.shape[0])[:, None], (1, sorted_indexes.shape[1])) # [[0 0 ...], [1 1 ...], ..., [23 23 ...]]  I miss matlab's repmat
+        ors = np.unique(ors[tiled_range,sorted_indexes],axis=0)
         shapes=[Shape(a,self.idx) for a in ors]
         return ShapeSet(shapes)
     
     def containedTranslations(self, board):
         ''' return a ShapeSet of all translations of self that is contained in other'''
-        rng=board.bbox-self.bbox #first row is the start shift, second row is the end shift
+        rng=board._bbox-self._bbox #first row is the start shift, second row is the end shift
         dimShifts=[range(rng[0][dim],rng[1][dim]+1) for dim in range(self.ar.shape[1])]
         shifts=np.array(list(product(*dimShifts)),dtype=self.ar.dtype)
-#         print dimShifts
         validShapes=ShapeSet()
         for s in shifts:
             translatedAr=self.ar+np.array(s,dtype=self.ar.dtype)
-            tps=geomState(translatedAr)
-            if     tps <= u.boardGeomState:
-                validShapes.append(Shape(translatedAr,self.idx))
+            translatedShape=Shape(translatedAr,self.idx)
+            if translatedShape.geomState <= u.board.geomState:
+                validShapes.append(translatedShape)
         return validShapes
     
-    def asStateVector(self):
+    def asStateVector(self)->np.ndarray:
         '''
             @return: a binary vector, with a one indicating the shape occupies a 
                 slot on the board, augmented with 1 in the self.idx position
@@ -116,11 +89,45 @@ class Shape(object):
         if self.idx<0:
             raise ValueError('cannot create state vector for negative index'%self.idx)
         s=np.zeros(u.stateDims,dtype=np.int8)
-        posState=[u.boardStateMap[v] for v in geomState(self.ar)]
-        s[np.array(posState)]=True
-        s[len(u.boardStateMap)+self.idx]=True
+        posState=[u.boardStateMap[v] for v in self.geomState]
+        s[np.array(posState)]=1
+        s[len(u.boardStateMap)+self.idx]=1
         return s
-        
+
+
+class Universe(object):
+    ''' A puzzle configuration (aka universe).  For example, this could be two-dimentional puzzles, or pyramid-like
+        puzzles.   It requires that the pieces can be specified on an integer grid in some linear basis.
+
+        It consists of a board Shape, and a basis, mapping orthonormal integer
+        grid coordinates into the actual physical, real-world coordinates.  This is used to display the solutions as a
+        interactive 3d model.
+
+        Also defines the colors for underlying pieces used in the puzzle.'''
+
+    def __init__(self, board: Shape, basis: np.ndarray, pieceCount: int):
+        self.board = board
+        self.boardStateMap = {s: i for i, s in enumerate(self.board.geomState)}
+
+        self.stateDims = len(self.boardStateMap) + pieceCount
+        self.basis = basis  # useful for 4-way symmetric lattices.
+        self.invBasis = np.linalg.inv(basis)  # useful for 4-way symmetric lattices.
+        # a color for each piece index, to match a real-life puzzle piece color
+        self.colors = (
+            'xkcd:pink',
+            'xkcd:darkblue',
+            'lime',
+            'xkcd:crimson',
+            'xkcd:yellow',
+            'silver',
+            'xkcd:red',
+            'xkcd:lightblue',
+            'xkcd:darkgreen',
+            'xkcd:purple',
+            'xkcd:orange',
+            'xkcd:beige',
+        )
+
 class ShapeSet(list):
     '''A collection of Shapes.'''
     def visualize(self, individually=False):
@@ -147,7 +154,7 @@ class ShapeSet(list):
 #                 size=5
             inOrthogonal=p.ar.dot(u.basis.T)
             ax.scatter(*np.hsplit(inOrthogonal,3), c=np.array([mpl.colors.to_rgba(color,.7)]), marker='o', s=size, depthshade=False)
-            plt.show()
+        plt.show()
 
     def _prepareAxis(self, Xb, Yb, Zb):
         fig = plt.figure()
@@ -373,19 +380,20 @@ def pyramidProblem():
 
     return rots, pieces
 
-def solve(rots, pieces):    
+def solve(rots, pieces, maxSolutions=100):    
     stateSet=ShapeSet()
     for p in pieces:
         for o in p.orientations(rots):
             ts=o.containedTranslations(u.board)
             stateSet.extend(ts)
+        # print(len(p.orientations(rots)))
 
     S = stateSet.asStateMatrix().astype(np.int32)
     print("number of oriented, positioned shapes (cover candidates): %d"%len(S))
     sols=[]
     def solCollector(curSol):
         sols.append(curSol.keys())
-        return len(sols)>=100
+        return len(sols)>=maxSolutions
 
     sparseS = DLMatrix(S.shape[1])
     for r in S:
@@ -403,7 +411,7 @@ def solve(rots, pieces):
     return solSets
     
 if __name__ == '__main__':
-#     p=pyramidProblem()
-    p=rectangleProblem()
-    s= solve(*p)
+    p=pyramidProblem()
+    # p=rectangleProblem()
+    s= solve(*p,10)
     print(s)

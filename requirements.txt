@@ -1,0 +1,8 @@
+notebook
+matplotlib
+numpy
+ipympl
+ipywidgets
+nodejs-bin
+typing_extensions
+dlx @ git+https://github.com/DavideCanton/DancingLinksX@408c0f6e

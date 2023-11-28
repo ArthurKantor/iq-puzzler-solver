@@ -1,10 +1,10 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from dlmatrix import DLMatrix
+from dlx.dlmatrix import DancingLinksMatrix
 from itertools import product, permutations
 import math
 import matplotlib as mpl
-from alg_x import AlgorithmX
+from dlx.alg_x import AlgorithmX
 
 np.set_printoptions(formatter={'float_kind': lambda x: "%.3g" % x})
 
@@ -170,7 +170,7 @@ class Puzzle:
             sols.append(cur_sol.keys())
             return len(sols) >= max_solutions
 
-        sparse_s = DLMatrix(s.shape[1])
+        sparse_s = DancingLinksMatrix(s.shape[1])
         for r in s:
             sparse_s.add_sparse_row(np.nonzero(r)[0].tolist())
 
@@ -210,8 +210,9 @@ class Puzzle:
                 for r in axisRots:
                     cur_rot *= r
                 rots.append(np.around(cur_rot, 10))
-        # print ("generated %d rotations"%len(rots))
-        return np.unique(np.stack(rots), axis=0)
+        urots = np.unique(np.stack(rots), axis=0)
+        print ("generated %d rotations"%len(urots))
+        return urots
 
     def _shape_as_state_vector(self, piece: Shape) -> np.ndarray:
         """
